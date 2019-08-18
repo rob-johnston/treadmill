@@ -1,24 +1,23 @@
 package plana
 
 import (
-	"context"
 	"fmt"
+	"github.com/rob-johnston/plana/DB"
+	"github.com/rob-johnston/plana/job"
 	"github.com/rob-johnston/plana/worker"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
-	"log"
 	"time"
 )
 
 //  the heart of our plana - a scheduler
 type Scheduler struct {
-	db           *mongo.Client
-	definitions  map[string]func(interface{})(string, error)
-	pendingQueue []*worker.Job
+	definitions  map[string]func(interface{}) error
+	pendingQueue []*job.Job
 	workers      []*worker.Worker
+	db *DB.DB
 }
 
-var WorkerChannel = make(chan chan worker.Job)
+var WorkerChannel = make(chan chan job.Job)
 
 // runs the scheduler
 func (s *Scheduler) Run() {
@@ -29,6 +28,8 @@ func (s *Scheduler) Run() {
 
 	// create a dispatch worker
 	go s.dispatcherWorker(processJobs, end)
+
+
 
 	// create job workers
 
@@ -47,38 +48,17 @@ func (s *Scheduler) Run() {
 
 // fetches jobs from the DB and places them in the pendingQueue
 func (s *Scheduler) fetchDbJobs(processJobs chan struct{}) {
-	collection := s.db.Database("go-testing").Collection("jobs")
+	var allResults []*job.Job
 
-	var allResults []*worker.Job
-
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	cur, err := collection.Find(ctx, bson.D{})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for cur.Next(context.Background()) {
-		fmt.Println("decoding results...")
-		var result worker.Job
-		err := cur.Decode(&result)
-
-		if err != nil {
-			log.Fatal(err)
-		}
-		allResults = append(allResults, &result)
-	}
+	allResults = s.db.FindJobs()
 	// copy all results to our pendingQueue
 	s.pendingQueue = append(s.pendingQueue, allResults...)
 	fmt.Println(s.pendingQueue)
-
-	err = cur.Close(context.Background())
-	if err := cur.Err(); err != nil {
-		log.Fatal(err)
-	}
 }
 
-func enqueueJob (queue []*worker.Job, job worker.Job) []*worker.Job {
+func enqueueJob (queue []*job.Job, job job.Job) []*job.Job {
 	// throw out any duplicate jobs
+	// TODO if queue already contains a job, don't add it
 
 	// could do some prioritization pendingQueue stuff here
 	return append(queue, &job)
@@ -89,6 +69,7 @@ func enqueueJob (queue []*worker.Job, job worker.Job) []*worker.Job {
 func (s *Scheduler) dispatcherWorker(run <-chan struct{}, close <-chan struct{}) {
 
 	// initialise some workers
+	// TODO take worker count as argument?
 	workerCount := 5
 
 	i := 0
@@ -97,7 +78,7 @@ func (s *Scheduler) dispatcherWorker(run <-chan struct{}, close <-chan struct{})
 		fmt.Println("starting worker: ", i)
 		worker := worker.Worker{
 			ID: i,
-			Channel: make(chan worker.Job),
+			Channel: make(chan job.Job),
 			WorkerChannel: WorkerChannel,
 			End: make(chan struct{}),
 			Definitions: s.definitions,
@@ -125,57 +106,44 @@ func (s *Scheduler) dispatcherWorker(run <-chan struct{}, close <-chan struct{})
 	}
 }
 
-func (s *Scheduler) ProcessJob(job *worker.Job) {
-	if f, ok := s.definitions[job.Name]; ok {
-		res, err := f(job.Data)
-		if err != nil {
-			log.Fatal("failed job")
-		}
-		fmt.Println(res)
-		fmt.Println("at end of processJob")
-	}
-}
 
 // adds a user defined job to our definitions map
-func (s *Scheduler) define(name string, function func(interface{})(string, error)){
+func (s *Scheduler) define(name string, function func(interface{}) error){
 	s.definitions[name] = function
 }
 
 // schedules a job to run
 func (s * Scheduler) schedule(when string, name string, data interface{}) error {
 
-	t, err := time.Parse(time.UnixDate, when)
-	if err != nil { // Always check errors even if they should not happen.
-		panic(err)
+	layout := "2006-01-02 15:04:05"
+	t, err := time.Parse(layout, when)
+	if err != nil {
+		return err
 	}
 
-	job := worker.Job{
+	payload := job.Job{
 		Name:name,
 		RunAt:t,
 		Data:data,
 	}
 
-	collection := s.db.Database("go-testing").Collection("jobs")
-	_, err = collection.InsertOne(context.Background(), job)
+	err = s.db.CreateJob(payload)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func NewPlana(db *mongo.Client) *Scheduler {
+// TODO rename this planner thing - just use Scheduler everywhere
+// TODO remove default function from here
+func NewPlana(client *mongo.Client) *Scheduler {
 
 	// set up our lovely Plana object (sorry about the name ¯\_(ツ)_/¯ )
 	s := new(Scheduler)
+	db := DB.InitDB("go-testing", "jobs", client)
+	s.definitions = make(map[string]func(interface{}) error)
+	s.pendingQueue = []*job.Job{}
 	s.db = db
-	s.definitions = map[string]func(interface{})(string, error){
-		"test": func(data interface{})(string, error){
-			fmt.Println(data)
-			fmt.Println("successfully running the job")
-			return "", nil
-		},
-	}
-	s.pendingQueue = []*worker.Job{}
 	return s
 }
 

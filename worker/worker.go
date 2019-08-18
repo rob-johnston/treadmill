@@ -2,22 +2,17 @@ package worker
 
 import (
 	"fmt"
-	"time"
+	"github.com/rob-johnston/plana/DB"
+	"github.com/rob-johnston/plana/job"
 )
-
-// represents a job to run
-type Job struct {
-	Name string
-	RunAt time.Time
-	Data interface{}
-}
 
 type Worker struct {
 	ID int
-	WorkerChannel chan chan Job
-	Channel chan Job
+	WorkerChannel chan chan job.Job
+	Channel chan job.Job
 	End chan struct{}
-	Definitions  map[string]func(interface{})(string, error)
+	Definitions  map[string]func(interface{}) error
+	DB.DB
 }
 
 func (w *Worker) Start() {
@@ -32,7 +27,7 @@ func (w *Worker) Start() {
 				fmt.Println(job)
 
 				// execute the job function
-				w.runJob(job)
+				w.runJob(&job)
 				// use definitions to run function
 			case <-w.End:
 				return
@@ -41,11 +36,18 @@ func (w *Worker) Start() {
 	}()
 }
 
-func (w *Worker) runJob(job Job)  {
-	res, err := w.Definitions[job.Name](job.Data)
+func (w *Worker) runJob(job *job.Job)  {
+	err := w.Definitions[job.Name](job.Data)
 	if err != nil {
 		// handle a failed job
+		job.Status = "failed"
+		job.Error = err
+
+
+
 	}
+
+	// TODO handle a completed job, update result to DB
 
 	//handle a successfully completed job
 
