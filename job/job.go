@@ -7,7 +7,7 @@ import (
 
 // represents a job to run
 type Job struct {
-	ID          	  primitive.ObjectID `bson:"_id" json:"id"`
+	ID          	  primitive.ObjectID `bson:"_id,omitempty" json:"_id"`
 	Name string		  `bson:"name" json:"name"`
 	Status string	  `bson:"status" json:"status"`
 	RunAt time.Time   `bson:"runAt" json:"runAt"`

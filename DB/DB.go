@@ -29,18 +29,23 @@ func InitDB(name string, collection string, client *mongo.Client) *DB{
 
 func (db *DB) CreateJob(job job.Job) error {
 	collection := db.client.Database(db.name).Collection(db.collection)
+	fmt.Println(job)
 	_, err := collection.InsertOne(context.Background(), job)
 	if err != nil {
+		fmt.Println(err)
+		fmt.Println("error creating job")
 		return err
 	}
+	fmt.Println("created job")
 	return nil
 }
 
 
 func (db *DB) UpdateJobById(id string, data interface{}) error {
 	collection := db.client.Database(db.name).Collection(db.collection)
-	filter := bson.D{{ "_id", primitive.ObjectIDFromHex(id)}}
-	_, err := collection.UpdateOne(context.Background(), filter, data)
+	objectId, err := primitive.ObjectIDFromHex(id)
+	filter := bson.D{{ "_id", objectId}}
+	_, err = collection.UpdateOne(context.Background(), filter, data)
 	if err != nil {
 		return err
 	}

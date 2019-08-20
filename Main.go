@@ -108,16 +108,17 @@ func (s *Scheduler) dispatcherWorker(run <-chan struct{}, close <-chan struct{})
 
 
 // adds a user defined job to our definitions map
-func (s *Scheduler) define(name string, function func(interface{}) error){
+func (s *Scheduler) Define(name string, function func(data interface{}) error){
 	s.definitions[name] = function
 }
 
 // schedules a job to run
-func (s * Scheduler) schedule(when string, name string, data interface{}) error {
+func (s * Scheduler) Schedule(when string, name string, data interface{}) error {
 
 	layout := "2006-01-02 15:04:05"
 	t, err := time.Parse(layout, when)
 	if err != nil {
+		fmt.Println("error parsing time")
 		return err
 	}
 
@@ -125,10 +126,12 @@ func (s * Scheduler) schedule(when string, name string, data interface{}) error 
 		Name:name,
 		RunAt:t,
 		Data:data,
+		Status: "waiting",
 	}
 
 	err = s.db.CreateJob(payload)
 	if err != nil {
+		fmt.Println("error creating job in db")
 		return err
 	}
 	return nil
