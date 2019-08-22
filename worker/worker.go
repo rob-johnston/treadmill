@@ -37,6 +37,8 @@ func (w *Worker) Start() {
 }
 
 func (w *Worker) runJob(job *job.Job)  {
+	fmt.Println("running job in worker. data is::")
+	fmt.Println(job.Data)
 	err := w.Definitions[job.Name](job.Data)
 	if err != nil {
 		// handle a failed job

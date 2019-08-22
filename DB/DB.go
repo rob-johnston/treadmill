@@ -71,7 +71,6 @@ func (db *DB) FindJobs() []*job.Job {
 	}
 
 	for cur.Next(context.Background()) {
-		fmt.Println("decoding results...")
 		var result job.Job
 		err := cur.Decode(&result)
 

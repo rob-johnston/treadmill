@@ -51,9 +51,10 @@ func (s *Scheduler) fetchDbJobs(processJobs chan struct{}) {
 	var allResults []*job.Job
 
 	allResults = s.db.FindJobs()
+	fmt.Println("current state of value 1 in pending queue:::")
+	fmt.Println(allResults[0])
 	// copy all results to our pendingQueue
 	s.pendingQueue = append(s.pendingQueue, allResults...)
-	fmt.Println(s.pendingQueue)
 }
 
 func enqueueJob (queue []*job.Job, job job.Job) []*job.Job {
