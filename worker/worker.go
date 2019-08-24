@@ -22,9 +22,6 @@ func (w *Worker) Start() {
 			w.WorkerChannel <-w.Channel
 			select {
 			case job := <-w.Channel:
-				// do the work here
-				fmt.Println("executing super important job herr")
-				fmt.Println(job)
 
 				// execute the job function
 				w.runJob(&job)
@@ -37,16 +34,11 @@ func (w *Worker) Start() {
 }
 
 func (w *Worker) runJob(job *job.Job)  {
-	fmt.Println("running job in worker. data is::")
-	fmt.Println(job.Data)
 	err := w.Definitions[job.Name](job.Data)
 	if err != nil {
 		// handle a failed job
 		job.Status = "failed"
 		job.Error = err
-
-
-
 	}
 
 	// TODO handle a completed job, update result to DB

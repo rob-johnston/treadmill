@@ -5,7 +5,9 @@ import (
 	"github.com/rob-johnston/plana/DB"
 	"github.com/rob-johnston/plana/job"
 	"github.com/rob-johnston/plana/worker"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"log"
 	"time"
 )
 
@@ -19,6 +21,8 @@ type Scheduler struct {
 
 var WorkerChannel = make(chan chan job.Job)
 
+var Time = time.Now()
+
 // runs the scheduler
 func (s *Scheduler) Run() {
 
@@ -28,10 +32,6 @@ func (s *Scheduler) Run() {
 
 	// create a dispatch worker
 	go s.dispatcherWorker(processJobs, end)
-
-
-
-	// create job workers
 
 	// start thread with our main job fetching loop
 	go func(){
@@ -50,10 +50,10 @@ func (s *Scheduler) Run() {
 func (s *Scheduler) fetchDbJobs(processJobs chan struct{}) {
 	var allResults []*job.Job
 
+	// find all jobs
 	allResults = s.db.FindJobs()
-	fmt.Println("current state of value 1 in pending queue:::")
-	fmt.Println(allResults[0])
-	// copy all results to our pendingQueue
+
+	// copy them to our pendingQueue
 	s.pendingQueue = append(s.pendingQueue, allResults...)
 }
 
@@ -71,13 +71,13 @@ func (s *Scheduler) dispatcherWorker(run <-chan struct{}, close <-chan struct{})
 
 	// initialise some workers
 	// TODO take worker count as argument?
-	workerCount := 5
+	workerCount := 10
 
 	i := 0
 	for i < workerCount {
 		i++
 		fmt.Println("starting worker: ", i)
-		worker := worker.Worker{
+		w := worker.Worker{
 			ID: i,
 			Channel: make(chan job.Job),
 			WorkerChannel: WorkerChannel,
@@ -85,8 +85,8 @@ func (s *Scheduler) dispatcherWorker(run <-chan struct{}, close <-chan struct{})
 			Definitions: s.definitions,
 		}
 
-		worker.Start()
-		s.workers = append(s.workers, &worker)
+		w.Start()
+		s.workers = append(s.workers, &w)
 	}
 
 
@@ -94,17 +94,33 @@ func (s *Scheduler) dispatcherWorker(run <-chan struct{}, close <-chan struct{})
 		// loop and listen for signal to run or close
 		select {
 		case <-run:
-			fmt.Println(s.pendingQueue)
-			fmt.Println("running inside dispatch worker loop")
-			for _, job := range s.pendingQueue {
-				fmt.Println("about to dispatch job to worker..")
-				worker := <-WorkerChannel // wait for channel to be available
-				worker <- *job
+			for _, j := range s.pendingQueue {
+				wc := <-WorkerChannel // wait for channel to be available
+				wc <- *j // send work to the available channel
 			}
+
 		case <-close:
-			return
+			for _, wrkr := range s.workers {
+				wrkr.Stop()
+			}
 		}
 	}
+}
+
+// decodes given bson data into a given struct
+func (s *Scheduler) Decode(goal interface{}, data interface{}) error {
+
+	x, err := bson.Marshal(data)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = bson.Unmarshal(x, goal)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return nil
 }
 
 
@@ -116,6 +132,7 @@ func (s *Scheduler) Define(name string, function func(data interface{}) error){
 // schedules a job to run
 func (s * Scheduler) Schedule(when string, name string, data interface{}) error {
 
+	// define how we accept dates - could also be a setting??
 	layout := "2006-01-02 15:04:05"
 	t, err := time.Parse(layout, when)
 	if err != nil {
@@ -139,7 +156,7 @@ func (s * Scheduler) Schedule(when string, name string, data interface{}) error 
 }
 
 // TODO rename this planner thing - just use Scheduler everywhere
-// TODO remove default function from here
+// TODO take options struct as argument, workers, etc
 func NewPlana(client *mongo.Client) *Scheduler {
 
 	// set up our lovely Plana object (sorry about the name ¯\_(ツ)_/¯ )
