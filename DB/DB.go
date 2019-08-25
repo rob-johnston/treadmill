@@ -52,6 +52,16 @@ func (db *DB) UpdateJobById(id string, data interface{}) error {
 	return nil
 }
 
+func (db *DB) UpdateJobByObjectId(id primitive.ObjectID, data interface{}) error {
+	collection := db.client.Database("go-testing").Collection("jobs")
+	filter := bson.D{{ "_id", id}}
+	_, err := collection.UpdateOne(context.Background(), filter, data)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (db *DB) FindJobs() []*job.Job {
 	collection := db.client.Database("go-testing").Collection("jobs")
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/rob-johnston/plana/DB"
 	"github.com/rob-johnston/plana/job"
+	"github.com/rob-johnston/plana/queue"
 	"github.com/rob-johnston/plana/worker"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -14,14 +15,13 @@ import (
 //  the heart of our plana - a scheduler
 type Scheduler struct {
 	definitions  map[string]func(interface{}) error
-	pendingQueue []*job.Job
+	pendingQueue *queue.PendingQueue
 	workers      []*worker.Worker
 	db *DB.DB
 }
 
 var WorkerChannel = make(chan chan job.Job)
 
-var Time = time.Now()
 
 // runs the scheduler
 func (s *Scheduler) Run() {
@@ -40,8 +40,10 @@ func (s *Scheduler) Run() {
 			// pull in all jobs
 			s.fetchDbJobs(processJobs)
 
-			// signal it is time for the dispatch worker to run
-			processJobs <- struct{}{}
+			if s.pendingQueue.Length() > 0 {
+				// signal it is time for the dispatch worker to run
+				processJobs <- struct{}{}
+			}
 		}
 	}()
 }
@@ -54,7 +56,9 @@ func (s *Scheduler) fetchDbJobs(processJobs chan struct{}) {
 	allResults = s.db.FindJobs()
 
 	// copy them to our pendingQueue
-	s.pendingQueue = append(s.pendingQueue, allResults...)
+	for _, v := range allResults {
+		s.pendingQueue.Append(v)
+	}
 }
 
 func enqueueJob (queue []*job.Job, job job.Job) []*job.Job {
@@ -83,6 +87,7 @@ func (s *Scheduler) dispatcherWorker(run <-chan struct{}, close <-chan struct{})
 			WorkerChannel: WorkerChannel,
 			End: make(chan struct{}),
 			Definitions: s.definitions,
+			DB: s.db,
 		}
 
 		w.Start()
@@ -94,10 +99,13 @@ func (s *Scheduler) dispatcherWorker(run <-chan struct{}, close <-chan struct{})
 		// loop and listen for signal to run or close
 		select {
 		case <-run:
-			for _, j := range s.pendingQueue {
+			for j := range s.pendingQueue.Iterate() {
 				wc := <-WorkerChannel // wait for channel to be available
 				wc <- *j // send work to the available channel
 			}
+
+			// now clear the queue?
+
 
 		case <-close:
 			for _, wrkr := range s.workers {
@@ -163,7 +171,7 @@ func NewPlana(client *mongo.Client) *Scheduler {
 	s := new(Scheduler)
 	db := DB.InitDB("go-testing", "jobs", client)
 	s.definitions = make(map[string]func(interface{}) error)
-	s.pendingQueue = []*job.Job{}
+	s.pendingQueue = queue.NewPendingQueue()
 	s.db = db
 	return s
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/rob-johnston/plana/DB"
 	"github.com/rob-johnston/plana/job"
+	"time"
 )
 
 type Worker struct {
@@ -12,7 +13,7 @@ type Worker struct {
 	Channel chan job.Job
 	End chan struct{}
 	Definitions  map[string]func(interface{}) error
-	DB.DB
+	DB *DB.DB
 }
 
 func (w *Worker) Start() {
@@ -21,10 +22,10 @@ func (w *Worker) Start() {
 			// when the worker is free, send this workers channel to the worker channel queue
 			w.WorkerChannel <-w.Channel
 			select {
-			case job := <-w.Channel:
+			case j := <-w.Channel:
 
 				// execute the job function
-				w.runJob(&job)
+				w.runJob(&j)
 				// use definitions to run function
 			case <-w.End:
 				return
@@ -33,20 +34,30 @@ func (w *Worker) Start() {
 	}()
 }
 
-func (w *Worker) runJob(job *job.Job)  {
-	err := w.Definitions[job.Name](job.Data)
+func (w *Worker) runJob(j *job.Job)  {
+	err := w.Definitions[j.Name](j.Data)
+
+	payload := job.Job{}
 	if err != nil {
+
 		// handle a failed job
-		job.Status = "failed"
-		job.Error = err
+		payload.Status = "failed"
+		payload.Error = err
+		payload.CompletedAt = time.Now()
+
+	} else {
+
+		// handle successfully run job
+		payload.Status = "completed"
+		payload.CompletedAt = time.Now()
 	}
 
-	// TODO handle a completed job, update result to DB
 
-	//handle a successfully completed job
+	err = w.DB.UpdateJobByObjectId(j.ID, payload)
 
-	//ie access mongodb and update the record with
-	//the results
+	if err != nil {
+		fmt.Println(err)
+	}
 }
 
 func (w *Worker) Stop(){
