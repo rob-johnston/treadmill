@@ -1,7 +1,7 @@
 package queue
 
 import (
-	"github.com/rob-johnston/plana/job"
+	"github.com/rob-johnston/treadmill/job"
 	"sync"
 )
 
@@ -22,12 +22,15 @@ func (pq *PendingQueue) Append (j *job.Job) {
 	pq.Lock()
 	defer pq.Unlock()
 	pq.items = append(pq.items, j)
+
 }
 
 func (pq * PendingQueue) Length() int {
 	return len(pq.items)
 }
 
+// acquires a lock on the queue before popping every
+// item and sending it through the returned channel
 func (pq *PendingQueue) Iterate() <- chan *job.Job {
 	c := make(chan *job.Job)
 

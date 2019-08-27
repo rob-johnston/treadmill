@@ -1,23 +1,24 @@
-package plana
+package treadmill
 
 import (
 	"fmt"
-	"github.com/rob-johnston/plana/DB"
-	"github.com/rob-johnston/plana/job"
-	"github.com/rob-johnston/plana/queue"
-	"github.com/rob-johnston/plana/worker"
+	"github.com/rob-johnston/treadmill/DB"
+	"github.com/rob-johnston/treadmill/job"
+	"github.com/rob-johnston/treadmill/options"
+	"github.com/rob-johnston/treadmill/queue"
+	"github.com/rob-johnston/treadmill/worker"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
 	"log"
 	"time"
 )
 
-//  the heart of our plana - a scheduler
+//  this is the heart of our treadmill object
 type Scheduler struct {
 	definitions  map[string]func(interface{}) error
 	pendingQueue *queue.PendingQueue
 	workers      []*worker.Worker
 	db *DB.DB
+	options options.Options
 }
 
 var WorkerChannel = make(chan chan job.Job)
@@ -35,7 +36,7 @@ func (s *Scheduler) Run() {
 
 	// start thread with our main job fetching loop
 	go func(){
-		for range time.Tick(5 * time.Second) {
+		for range time.Tick(s.options.RunFrequency) {
 
 			// pull in all jobs
 			s.fetchDbJobs(processJobs)
@@ -57,16 +58,16 @@ func (s *Scheduler) fetchDbJobs(processJobs chan struct{}) {
 
 	// copy them to our pendingQueue
 	for _, v := range allResults {
-		s.pendingQueue.Append(v)
+		s.enqueue(v)
 	}
 }
 
-func enqueueJob (queue []*job.Job, job job.Job) []*job.Job {
-	// throw out any duplicate jobs
-	// TODO if queue already contains a job, don't add it
-
-	// could do some prioritization pendingQueue stuff here
-	return append(queue, &job)
+func (s *Scheduler) enqueue(j *job.Job) {
+	s.pendingQueue.Append(j)
+	err := s.db.UpdateJobByObjectId(j.ID, struct{ Status string }{ Status: "running" })
+	if err != nil {
+		fmt.Printf("unable to set job: %v status to running\n", j.ID)
+	}
 }
 
 
@@ -74,11 +75,8 @@ func enqueueJob (queue []*job.Job, job job.Job) []*job.Job {
 func (s *Scheduler) dispatcherWorker(run <-chan struct{}, close <-chan struct{}) {
 
 	// initialise some workers
-	// TODO take worker count as argument?
-	workerCount := 10
-
 	i := 0
-	for i < workerCount {
+	for i < s.options.WorkerCount {
 		i++
 		fmt.Println("starting worker: ", i)
 		w := worker.Worker{
@@ -141,8 +139,7 @@ func (s *Scheduler) Define(name string, function func(data interface{}) error){
 func (s * Scheduler) Schedule(when string, name string, data interface{}) error {
 
 	// define how we accept dates - could also be a setting??
-	layout := "2006-01-02 15:04:05"
-	t, err := time.Parse(layout, when)
+	t, err := time.Parse(s.options.DateFormat, when)
 	if err != nil {
 		fmt.Println("error parsing time")
 		return err
@@ -163,16 +160,38 @@ func (s * Scheduler) Schedule(when string, name string, data interface{}) error 
 	return nil
 }
 
-// TODO rename this planner thing - just use Scheduler everywhere
-// TODO take options struct as argument, workers, etc
-func NewPlana(client *mongo.Client) *Scheduler {
+func NewTreadmill(options options.Options) *Scheduler {
 
-	// set up our lovely Plana object (sorry about the name ¯\_(ツ)_/¯ )
+	checkOptions(&options)
+	// set up our treadmill object thing ¯\_(ツ)_/¯
 	s := new(Scheduler)
-	db := DB.InitDB("go-testing", "jobs", client)
+	db := DB.InitDB(options.Database, options.Collection, options.Client)
 	s.definitions = make(map[string]func(interface{}) error)
 	s.pendingQueue = queue.NewPendingQueue()
 	s.db = db
+	s.options = options
 	return s
 }
 
+// set some default values if they aren't included
+func checkOptions(options *options.Options) {
+	if options.Client == nil {
+		panic("You must provide a mongo client in the options")
+	}
+
+	if options.Collection == "" || options.Database == "" {
+		panic("You must provide database and collection names")
+	}
+
+	if options.WorkerCount == 0 {
+		options.WorkerCount = 5
+	}
+
+	if options.DateFormat == "" {
+		options.DateFormat = "2006-01-02 15:04:05"
+	}
+
+	if options.RunFrequency == 0 {
+		options.RunFrequency = time.Second * 5
+	}
+}

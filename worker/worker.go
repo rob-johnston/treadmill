@@ -2,8 +2,8 @@ package worker
 
 import (
 	"fmt"
-	"github.com/rob-johnston/plana/DB"
-	"github.com/rob-johnston/plana/job"
+	"github.com/rob-johnston/treadmill/DB"
+	"github.com/rob-johnston/treadmill/job"
 	"time"
 )
 
@@ -23,10 +23,9 @@ func (w *Worker) Start() {
 			w.WorkerChannel <-w.Channel
 			select {
 			case j := <-w.Channel:
-
-				// execute the job function
+				// execute the job
 				w.runJob(&j)
-				// use definitions to run function
+
 			case <-w.End:
 				return
 			}

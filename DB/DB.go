@@ -3,7 +3,7 @@ package DB
 import (
 	"context"
 	"fmt"
-	"github.com/rob-johnston/plana/job"
+	"github.com/rob-johnston/treadmill/job"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -29,11 +29,9 @@ func InitDB(name string, collection string, client *mongo.Client) *DB{
 
 func (db *DB) CreateJob(job job.Job) error {
 	collection := db.client.Database(db.name).Collection(db.collection)
-	fmt.Println(job)
 	_, err := collection.InsertOne(context.Background(), job)
 	if err != nil {
 		fmt.Println(err)
-		fmt.Println("error creating job")
 		return err
 	}
 	fmt.Println("created job")
@@ -55,7 +53,7 @@ func (db *DB) UpdateJobById(id string, data interface{}) error {
 func (db *DB) UpdateJobByObjectId(id primitive.ObjectID, data interface{}) error {
 	collection := db.client.Database("go-testing").Collection("jobs")
 	filter := bson.D{{ "_id", id}}
-	_, err := collection.UpdateOne(context.Background(), filter, data)
+	_, err := collection.UpdateOne(context.Background(), filter, bson.D{{ "$set",data}})
 	if err != nil {
 		return err
 	}
